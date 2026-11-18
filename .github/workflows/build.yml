@@ -1,0 +1,132 @@
+name: Build Future15
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack project zip if needed
+        run: |
+          if [ ! -f Makefile ]; then
+            for z in *.zip; do unzip -o "$z"; done
+          fi
+          if [ -d Future15 ] && [ -f Future15/Makefile ]; then
+            cp -R Future15/. .
+          fi
+          ls -la
+          test -f Makefile
+          test -f Future15.plist
+          chmod 644 Future15.plist
+          ls -l Future15.plist
+
+      - name: Install build tools (ldid, dpkg)
+        run: |
+          brew install ldid dpkg || brew install ldid dpkg
+          which ldid
+          which dpkg-deb || true
+
+      - name: Install Theos
+        run: |
+          export THEOS="$HOME/theos"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          rm -rf "$THEOS/sdks"
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$THEOS/sdks"
+          git -C "$THEOS/sdks" sparse-checkout set iPhoneOS16.5.sdk
+          ls "$THEOS/sdks"
+          xcodebuild -version
+
+      - name: Build package (rootless, arm64)
+        run: |
+          set -o pipefail
+          make clean
+          make package FINALPACKAGE=1 2>&1 | tee build.log
+          ls -lh packages/
+
+      - name: Inspect Debian package
+        run: |
+          set -e
+          DEB="$(ls packages/*.deb | head -n 1)"
+          echo "DEB=$DEB"
+          {
+            echo "=== Package file ==="
+            echo "$DEB"
+            echo
+            echo "=== Control metadata (dpkg-deb -f) ==="
+            dpkg-deb -f "$DEB"
+            echo
+            echo "=== Contents (dpkg-deb -c) ==="
+            dpkg-deb -c "$DEB"
+            echo
+            echo "=== Required files check ==="
+            dpkg-deb -c "$DEB" | grep -E "Future15\.dylib" || { echo "MISSING: Future15.dylib"; exit 1; }
+            dpkg-deb -c "$DEB" | grep -E "Future15\.plist" || { echo "MISSING: Future15.plist"; exit 1; }
+            dpkg-deb -c "$DEB" | grep -E "Future15Prefs" || { echo "MISSING: Future15Prefs bundle"; exit 1; }
+            echo "dylib, plist and prefs bundle are present."
+            echo
+            echo "=== Filter plist permission check (must be 644) ==="
+            dpkg-deb -c "$DEB" | grep -E "Future15\.plist" | grep -q "^-rw-r--r--" \
+              && echo "Plist permission OK: 644" || { echo "Plist permission NG: not 644"; exit 1; }
+            echo
+            echo "=== Extract and inspect ==="
+            rm -rf pkg_inspect && mkdir -p pkg_inspect
+            dpkg-deb -x "$DEB" pkg_inspect
+            find pkg_inspect -type f | sort
+            echo
+            echo "=== Filter plist contents ==="
+            PLIST_PATH="$(find pkg_inspect -name 'Future15.plist' | head -n 1)"
+            echo "Plist path in package: $PLIST_PATH"
+            cat "$PLIST_PATH"
+            grep -q "com.apple.springboard" "$PLIST_PATH" && echo "Filter target OK: com.apple.springboard"
+            echo
+            echo "=== Dylib architecture ==="
+            DYLIB_PATH="$(find pkg_inspect -name 'Future15.dylib' | head -n 1)"
+            echo "Dylib path in package: $DYLIB_PATH"
+            file "$DYLIB_PATH"
+            (lipo -info "$DYLIB_PATH" || true)
+            echo
+            echo "=== Dylib linked libraries (otool -L) ==="
+            (otool -L "$DYLIB_PATH" || true)
+            echo
+            echo "=== Prefs bundle architecture ==="
+            PREFS_BIN="$(find pkg_inspect -path '*Future15Prefs*' -type f ! -name '*.plist' | head -n 1)"
+            echo "Prefs binary: $PREFS_BIN"
+            file "$PREFS_BIN"
+          } 2>&1 | tee inspection_report.txt
+          cp "$DEB" Future15_Dopamine_Rootless.deb
+
+      - name: Prepare source ZIP
+        run: |
+          rm -rf source_zip && mkdir -p source_zip/Future15
+          cp -R Makefile control Tweak.x F15Manager.h F15Manager.m Future15.plist README_JP.md prefs .github source_zip/Future15/
+          (cd source_zip && zip -r ../Future15_Source.zip Future15)
+          ls -lh Future15_Source.zip Future15_Dopamine_Rootless.deb build.log inspection_report.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FUTURE15-0.1.0-rootless
+          path: |
+            Future15_Dopamine_Rootless.deb
+            Future15_Source.zip
+            build.log
+            inspection_report.txt
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: future15-build-log-failure
+          path: |
+            build.log
+            inspection_report.txt
+          if-no-files-found: ignore
