@@ -115,7 +115,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: FUTURE15-0.3.0-rootless
+          name: FUTURE15-0.3.1-rootless
           path: |
             Future15_Dopamine_Rootless.deb
             Future15_Source.zip
