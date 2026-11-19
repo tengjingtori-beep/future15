@@ -108,14 +108,14 @@ jobs:
       - name: Prepare source ZIP
         run: |
           rm -rf source_zip && mkdir -p source_zip/Future15
-          cp -R Makefile control Tweak.x F15Manager.h F15Manager.m F15Vocal.h F15Vocal.m Future15.plist README_JP.md prefs .github source_zip/Future15/
+          cp -R Makefile control Tweak.x F15Manager.h F15Manager.m Future15.plist README_JP.md prefs .github source_zip/Future15/
           (cd source_zip && zip -r ../Future15_Source.zip Future15)
           ls -lh Future15_Source.zip Future15_Dopamine_Rootless.deb build.log inspection_report.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: FUTURE15-0.3.1-rootless
+          name: FUTURE15-0.2.2-rootless
           path: |
             Future15_Dopamine_Rootless.deb
             Future15_Source.zip
