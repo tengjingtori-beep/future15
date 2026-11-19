@@ -24,6 +24,8 @@ jobs:
           ls -la
           test -f Makefile
           test -f Future15.plist
+          # The filter plist must be readable by the mobile user (SpringBoard).
+          # A 640 root:wheel plist can make the loader skip this tweak entirely.
           chmod 644 Future15.plist
           ls -l Future15.plist
 
@@ -85,7 +87,7 @@ jobs:
             PLIST_PATH="$(find pkg_inspect -name 'Future15.plist' | head -n 1)"
             echo "Plist path in package: $PLIST_PATH"
             cat "$PLIST_PATH"
-            grep -q "com.apple.springboard" "$PLIST_PATH" && echo "Filter target OK: com.apple.springboard"
+            grep -q "com.apple.UIKit" "$PLIST_PATH" && echo "Filter target OK: com.apple.UIKit"
             echo
             echo "=== Dylib architecture ==="
             DYLIB_PATH="$(find pkg_inspect -name 'Future15.dylib' | head -n 1)"
@@ -113,7 +115,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: FUTURE15-0.1.0-rootless
+          name: FUTURE15-0.2.0-rootless
           path: |
             Future15_Dopamine_Rootless.deb
             Future15_Source.zip
